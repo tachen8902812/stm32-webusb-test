@@ -227,6 +227,8 @@ sendJpgButton.addEventListener("click", async () => {
     }
 });
 
+
+
 speedTestButton.addEventListener("click", async () => {
 
     if (!device || !device.opened) {
@@ -247,69 +249,92 @@ speedTestButton.addEventListener("click", async () => {
 
         const CHUNK_SIZE = 512;
 
-        let offset = 0;
-        let index = 0;
+        // 測試同時 outstanding 的 transfer 數量
+        const depths = [1, 2, 4, 8];
 
-        let report =
-            `JPG: ${file.name}\n` +
-            `JPG size: ${jpgData.length} bytes\n\n`;
+        let output =
+            `JPG: ${file.name}<br>` +
+            `JPG size: ${jpgData.length} bytes<br><br>`;
 
-        const totalStart = performance.now();
+        statusText.innerHTML = output + "Testing...";
 
-        while (offset < jpgData.length) {
+        for (const depth of depths) {
 
-            const end = Math.min(
-                offset + CHUNK_SIZE,
-                jpgData.length
-            );
+            let offset = 0;
+            let transferCount = 0;
 
-            const chunk = jpgData.subarray(offset, end);
+            const startTime = performance.now();
 
-            const t0 = performance.now();
+            while (offset < jpgData.length) {
 
-            const result = await device.transferOut(
-                OUT_EP,
-                chunk
-            );
+                const promises = [];
 
-            const t1 = performance.now();
+                // 一次 queue depth 個 512-byte transfer
+                for (
+                    let i = 0;
+                    i < depth && offset < jpgData.length;
+                    i++
+                ) {
+                    const end = Math.min(
+                        offset + CHUNK_SIZE,
+                        jpgData.length
+                    );
 
-            const dt = t1 - t0;
+                    const chunk = jpgData.subarray(
+                        offset,
+                        end
+                    );
 
-            if (result.status !== "ok") {
-                throw new Error(
-                    `Transfer failed at packet ${index}`
-                );
+                    promises.push(
+                        device.transferOut(
+                            OUT_EP,
+                            chunk
+                        )
+                    );
+
+                    offset = end;
+                    transferCount++;
+                }
+
+                // 等這一批全部完成
+                const results = await Promise.all(promises);
+
+                for (const result of results) {
+
+                    if (result.status !== "ok") {
+                        throw new Error(
+                            `Depth ${depth}: ` +
+                            `transfer status = ${result.status}`
+                        );
+                    }
+                }
             }
 
-            report +=
-                `#${index.toString().padStart(2, "0")}  ` +
-                `${chunk.length.toString().padStart(3, " ")} B  ` +
-                `${dt.toFixed(2)} ms\n`;
+            const elapsed =
+                performance.now() - startTime;
 
-            offset += result.bytesWritten;
-            index++;
+            const speedKB =
+                (jpgData.length / 1024) /
+                (elapsed / 1000);
+
+            output +=
+                `Depth ${depth}: ` +
+                `${elapsed.toFixed(2)} ms, ` +
+                `${speedKB.toFixed(1)} KB/s, ` +
+                `${transferCount} transfers<br>`;
+
+            statusText.innerHTML =
+                output + "<br>Testing...";
         }
 
-        const totalEnd = performance.now();
-        const totalTime = totalEnd - totalStart;
-
-        const speedKB =
-            (jpgData.length / 1024) /
-            (totalTime / 1000);
-
-        report +=
-            `\nTotal: ${totalTime.toFixed(2)} ms\n` +
-            `Speed: ${speedKB.toFixed(1)} KB/s`;
-
-        statusText.style.whiteSpace = "pre-wrap";
-        statusText.textContent = report;
+        statusText.innerHTML =
+            output +
+            "<br>Outstanding Test Complete";
 
     } catch (error) {
 
-        statusText.textContent =
-            "ERROR: " +
-            error.name + ": " +
-            error.message;
+        statusText.innerHTML +=
+            `<br><br>ERROR: ` +
+            `${error.name}: ${error.message}`;
     }
 });
