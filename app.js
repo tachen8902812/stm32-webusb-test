@@ -159,22 +159,21 @@ sendJpgButton.addEventListener("click", async () => {
     try {
         const file = jpgFile.files[0];
 
-        // Read JPG raw binary
+        // ==========================================
+        // 1. 讀取 JPG
+        // ==========================================
+        const t0 = performance.now();
+
         const jpgBuffer = await file.arrayBuffer();
         const jpgData = new Uint8Array(jpgBuffer);
 
+        const t1 = performance.now();
+
         const jpgSize = jpgData.length;
 
-        statusText.textContent =
-            `Sending ${file.name}, ${jpgSize} bytes...`;
-
-        console.log("JPG size =", jpgSize);
-
-        // ------------------------------------------------
-        // Build packet:
-        // [4-byte little-endian JPG size][JPG raw data]
-        // ------------------------------------------------
-
+        // ==========================================
+        // 2. 建立 [4-byte size][JPG]
+        // ==========================================
         const txData = new Uint8Array(4 + jpgSize);
 
         txData[0] = (jpgSize) & 0xFF;
@@ -184,51 +183,41 @@ sendJpgButton.addEventListener("click", async () => {
 
         txData.set(jpgData, 4);
 
-        console.log("Total TX =", txData.length);
-        console.log(
-            "Header =",
-            txData[0],
-            txData[1],
-            txData[2],
-            txData[3]
-        );
+        const t2 = performance.now();
 
-        // ------------------------------------------------
-        // Bulk OUT
-        // OUT_EP = 3  -> USB EP 0x03
-        // ------------------------------------------------
-
-        const startTime = performance.now();
-
+        // ==========================================
+        // 3. 只量 WebUSB transferOut
+        // ==========================================
         const result = await device.transferOut(
             OUT_EP,
             txData
         );
 
-        const endTime = performance.now();
-
-        const elapsed = endTime - startTime;
-
-        console.log("transferOut status =", result.status);
-        console.log("bytesWritten =", result.bytesWritten);
-        console.log("time =", elapsed, "ms");
+        const t3 = performance.now();
 
         if (result.status !== "ok") {
-            statusText.textContent =
-                `Bulk OUT failed: ${result.status}`;
-            return;
+            throw new Error(
+                "Bulk OUT failed: " + result.status
+            );
         }
 
-        statusText.textContent =
-            `TX OK: ${result.bytesWritten} bytes, ` +
-            `${elapsed.toFixed(2)} ms`;
+        const fileReadTime = t1 - t0;
+        const buildTime = t2 - t1;
+        const usbTime = t3 - t2;
+        const totalTime = t3 - t0;
+
+        statusText.innerHTML =
+            `JPG = ${jpgSize} bytes<br>` +
+            `TX = ${result.bytesWritten} bytes<br>` +
+            `File read = ${fileReadTime.toFixed(2)} ms<br>` +
+            `Build = ${buildTime.toFixed(2)} ms<br>` +
+            `<b>USB transferOut = ${usbTime.toFixed(2)} ms</b><br>` +
+            `Total = ${totalTime.toFixed(2)} ms`;
 
     } catch (error) {
 
-        console.error("JPG TX Error:", error);
-
         statusText.textContent =
-            "JPG TX Error: " +
+            "ERROR: " +
             error.name + ": " +
             error.message;
     }
