@@ -12,6 +12,13 @@ const sendButton = document.getElementById("sendButton");
 const statusText = document.getElementById("status");
 const receiveButton = document.getElementById("receiveButton");
 
+const usbSupport = document.getElementById("usbSupport");
+
+if ("usb" in navigator) {
+    usbSupport.textContent = "WebUSB supported: YES";
+} else {
+    usbSupport.textContent = "WebUSB supported: NO";
+}
 
 receiveButton.addEventListener("click", async () => {
 
