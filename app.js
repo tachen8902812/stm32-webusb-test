@@ -240,193 +240,75 @@ speedTestButton.addEventListener("click", async () => {
     }
 
     try {
-        // ==========================================
-        // 讀真正 JPG
-        // ==========================================
         const file = jpgFile.files[0];
 
         const jpgBuffer = await file.arrayBuffer();
         const jpgData = new Uint8Array(jpgBuffer);
-        const jpgSize = jpgData.length;
 
-        speedResult.textContent =
+        const CHUNK_SIZE = 512;
+
+        let offset = 0;
+        let index = 0;
+
+        let report =
             `JPG: ${file.name}\n` +
-            `JPG size: ${jpgSize} bytes\n\n`;
+            `JPG size: ${jpgData.length} bytes\n\n`;
 
-        /*
-         * 每次測試仍然送同一張完整 JPG。
-         *
-         * 0 = 整張 [header + JPG] 一次 transferOut
-         *
-         * 其他值 = header 先送，
-         *          JPG 再依指定 chunk size 傳送
-         */
-        const chunkSizes = [
-            0,
-            512,
-            1024,
-            2048,
-            4096,
-            8192,
-            16384
-        ];
+        const totalStart = performance.now();
 
-        for (const chunkSize of chunkSizes) {
+        while (offset < jpgData.length) {
 
-            statusText.textContent =
-                chunkSize === 0
-                    ? "Testing Single Transfer..."
-                    : `Testing ${chunkSize} byte chunks...`;
-
-            let totalTime = 0;
-
-            // ======================================
-            // Case 1:
-            // [4-byte header + JPG] 一次 transferOut
-            // ======================================
-
-            if (chunkSize === 0) {
-
-                const txData =
-                    new Uint8Array(4 + jpgSize);
-
-                txData[0] = (jpgSize) & 0xFF;
-                txData[1] = (jpgSize >> 8) & 0xFF;
-                txData[2] = (jpgSize >> 16) & 0xFF;
-                txData[3] = (jpgSize >> 24) & 0xFF;
-
-                txData.set(jpgData, 4);
-
-                const t0 = performance.now();
-
-                const result =
-                    await device.transferOut(
-                        OUT_EP,
-                        txData
-                    );
-
-                const t1 = performance.now();
-
-                totalTime = t1 - t0;
-
-                if (result.status !== "ok") {
-                    throw new Error(
-                        "Single transfer failed"
-                    );
-                }
-
-                speedResult.textContent +=
-                    `Single : ` +
-                    `${totalTime.toFixed(2)} ms\n`;
-            }
-
-            // ======================================
-            // Case 2:
-            // Header 4 bytes
-            // +
-            // JPG chunked transfer
-            // ======================================
-
-            else {
-
-                // ---------- Header ----------
-                const header = new Uint8Array(4);
-
-                header[0] = (jpgSize) & 0xFF;
-                header[1] = (jpgSize >> 8) & 0xFF;
-                header[2] = (jpgSize >> 16) & 0xFF;
-                header[3] = (jpgSize >> 24) & 0xFF;
-
-                const t0 = performance.now();
-
-                let result =
-                    await device.transferOut(
-                        OUT_EP,
-                        header
-                    );
-
-                if (result.status !== "ok") {
-                    throw new Error(
-                        "Header transfer failed"
-                    );
-                }
-
-                // ---------- JPG ----------
-                let offset = 0;
-
-                while (offset < jpgSize) {
-
-                    const end =
-                        Math.min(
-                            offset + chunkSize,
-                            jpgSize
-                        );
-
-                    const chunk =
-                        jpgData.subarray(
-                            offset,
-                            end
-                        );
-
-                    result =
-                        await device.transferOut(
-                            OUT_EP,
-                            chunk
-                        );
-
-                    if (result.status !== "ok") {
-                        throw new Error(
-                            `Transfer failed ` +
-                            `at offset ${offset}`
-                        );
-                    }
-
-                    if (result.bytesWritten !==
-                        chunk.length) {
-
-                        throw new Error(
-                            `Short transfer ` +
-                            `${result.bytesWritten}/` +
-                            `${chunk.length}`
-                        );
-                    }
-
-                    offset +=
-                        result.bytesWritten;
-                }
-
-                const t1 = performance.now();
-
-                totalTime = t1 - t0;
-
-                speedResult.textContent +=
-                    `${chunkSize.toString().padStart(5)} B : ` +
-                    `${totalTime.toFixed(2)} ms\n`;
-            }
-
-            /*
-             * 非常重要：
-             * 同一張 JPG 已經完整送完。
-             *
-             * 給 STM32 一點時間完成目前圖片處理，
-             * 再開始下一輪完整 JPG。
-             *
-             * 這 1000 ms 不包含在 totalTime。
-             */
-            await new Promise(resolve =>
-                setTimeout(resolve, 1000)
+            const end = Math.min(
+                offset + CHUNK_SIZE,
+                jpgData.length
             );
+
+            const chunk = jpgData.subarray(offset, end);
+
+            const t0 = performance.now();
+
+            const result = await device.transferOut(
+                OUT_EP,
+                chunk
+            );
+
+            const t1 = performance.now();
+
+            const dt = t1 - t0;
+
+            if (result.status !== "ok") {
+                throw new Error(
+                    `Transfer failed at packet ${index}`
+                );
+            }
+
+            report +=
+                `#${index.toString().padStart(2, "0")}  ` +
+                `${chunk.length.toString().padStart(3, " ")} B  ` +
+                `${dt.toFixed(2)} ms\n`;
+
+            offset += result.bytesWritten;
+            index++;
         }
 
-        statusText.textContent =
-            "JPG Speed Test Complete";
+        const totalEnd = performance.now();
+        const totalTime = totalEnd - totalStart;
+
+        const speedKB =
+            (jpgData.length / 1024) /
+            (totalTime / 1000);
+
+        report +=
+            `\nTotal: ${totalTime.toFixed(2)} ms\n` +
+            `Speed: ${speedKB.toFixed(1)} KB/s`;
+
+        statusText.style.whiteSpace = "pre-wrap";
+        statusText.textContent = report;
 
     } catch (error) {
 
-        console.error(error);
-
         statusText.textContent =
-            "Speed Test ERROR: " +
+            "ERROR: " +
             error.name + ": " +
             error.message;
     }
