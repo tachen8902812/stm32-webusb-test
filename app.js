@@ -21,6 +21,9 @@ const speedResult = document.getElementById("speedResult");
 
 const usbSupport = document.getElementById("usbSupport");
 
+const boundaryTestButton =
+    document.getElementById("boundaryTestButton");
+
 if ("usb" in navigator) {
     usbSupport.textContent = "WebUSB supported: YES";
 } else {
@@ -336,5 +339,83 @@ speedTestButton.addEventListener("click", async () => {
         statusText.innerHTML +=
             `<br><br>ERROR: ` +
             `${error.name}: ${error.message}`;
+    }
+});
+
+boundaryTestButton.addEventListener("click", async () => {
+
+    if (!device || !device.opened) {
+        statusText.textContent = "STM32 not connected";
+        return;
+    }
+
+    const testSizes = [
+        511,
+        512,
+        513,
+        1023,
+        1024,
+        1025
+    ];
+
+    let output = "Boundary Test\n\n";
+
+    try {
+
+        for (const size of testSizes) {
+
+            // 建立測試資料
+            const data = new Uint8Array(size);
+
+            for (let i = 0; i < size; i++) {
+                data[i] = i & 0xFF;
+            }
+
+            // 讓畫面更新
+            statusText.textContent =
+                `Testing ${size} bytes...`;
+
+            await new Promise(resolve =>
+                setTimeout(resolve, 100)
+            );
+
+            // ------------------------------
+            // 單次 transferOut
+            // ------------------------------
+
+            const t0 = performance.now();
+
+            const result =
+                await device.transferOut(
+                    OUT_EP,
+                    data
+                );
+
+            const t1 = performance.now();
+
+            const elapsed = t1 - t0;
+
+            output +=
+                `${size} B : ` +
+                `${elapsed.toFixed(2)} ms` +
+                `, written=${result.bytesWritten}` +
+                `, ${result.status}\n`;
+        }
+
+        statusText.style.whiteSpace = "pre-wrap";
+
+        statusText.textContent =
+            output +
+            "\nBoundary Test Complete";
+
+    } catch (error) {
+
+        statusText.style.whiteSpace = "pre-wrap";
+
+        statusText.textContent =
+            output +
+            "\nERROR:\n" +
+            error.name + ": " +
+            error.message;
     }
 });
