@@ -12,6 +12,9 @@ const sendButton = document.getElementById("sendButton");
 const statusText = document.getElementById("status");
 const receiveButton = document.getElementById("receiveButton");
 
+const jpgFile = document.getElementById("jpgFile");
+const sendJpgButton = document.getElementById("sendJpgButton");
+
 const usbSupport = document.getElementById("usbSupport");
 
 if ("usb" in navigator) {
@@ -138,5 +141,95 @@ sendButton.addEventListener("click", async () => {
         console.error("Bulk OUT Error:", error);
         statusText.textContent =
             "Bulk OUT Error: " + error.message;
+    }
+});
+
+sendJpgButton.addEventListener("click", async () => {
+
+    if (!device || !device.opened) {
+        statusText.textContent = "STM32 not connected";
+        return;
+    }
+
+    if (jpgFile.files.length === 0) {
+        statusText.textContent = "Please select JPG";
+        return;
+    }
+
+    try {
+        const file = jpgFile.files[0];
+
+        // Read JPG raw binary
+        const jpgBuffer = await file.arrayBuffer();
+        const jpgData = new Uint8Array(jpgBuffer);
+
+        const jpgSize = jpgData.length;
+
+        statusText.textContent =
+            `Sending ${file.name}, ${jpgSize} bytes...`;
+
+        console.log("JPG size =", jpgSize);
+
+        // ------------------------------------------------
+        // Build packet:
+        // [4-byte little-endian JPG size][JPG raw data]
+        // ------------------------------------------------
+
+        const txData = new Uint8Array(4 + jpgSize);
+
+        txData[0] = (jpgSize) & 0xFF;
+        txData[1] = (jpgSize >> 8) & 0xFF;
+        txData[2] = (jpgSize >> 16) & 0xFF;
+        txData[3] = (jpgSize >> 24) & 0xFF;
+
+        txData.set(jpgData, 4);
+
+        console.log("Total TX =", txData.length);
+        console.log(
+            "Header =",
+            txData[0],
+            txData[1],
+            txData[2],
+            txData[3]
+        );
+
+        // ------------------------------------------------
+        // Bulk OUT
+        // OUT_EP = 3  -> USB EP 0x03
+        // ------------------------------------------------
+
+        const startTime = performance.now();
+
+        const result = await device.transferOut(
+            OUT_EP,
+            txData
+        );
+
+        const endTime = performance.now();
+
+        const elapsed = endTime - startTime;
+
+        console.log("transferOut status =", result.status);
+        console.log("bytesWritten =", result.bytesWritten);
+        console.log("time =", elapsed, "ms");
+
+        if (result.status !== "ok") {
+            statusText.textContent =
+                `Bulk OUT failed: ${result.status}`;
+            return;
+        }
+
+        statusText.textContent =
+            `TX OK: ${result.bytesWritten} bytes, ` +
+            `${elapsed.toFixed(2)} ms`;
+
+    } catch (error) {
+
+        console.error("JPG TX Error:", error);
+
+        statusText.textContent =
+            "JPG TX Error: " +
+            error.name + ": " +
+            error.message;
     }
 });
