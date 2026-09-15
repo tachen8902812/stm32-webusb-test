@@ -6,7 +6,7 @@ const PID = 0x0520;
 const INTERFACE_NUM = 0;
 const OUT_EP = 3;
 const IN_EP = 2;
-
+alert("APP.JS VERSION 3");
 const connectButton = document.getElementById("connectButton");
 const sendButton = document.getElementById("sendButton");
 const statusText = document.getElementById("status");
