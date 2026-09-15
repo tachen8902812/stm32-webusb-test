@@ -159,109 +159,76 @@ sendJpgButton.addEventListener("click", async () => {
     try {
         const file = jpgFile.files[0];
 
+        // Read JPG raw binary
         const jpgBuffer = await file.arrayBuffer();
         const jpgData = new Uint8Array(jpgBuffer);
+
         const jpgSize = jpgData.length;
+
+        statusText.textContent =
+            `Sending ${file.name}, ${jpgSize} bytes...`;
 
         console.log("JPG size =", jpgSize);
 
-        // ==========================================
-        // 1. 先送 4-byte little-endian JPG size
-        // ==========================================
-        const header = new Uint8Array(4);
+        // ------------------------------------------------
+        // Build packet:
+        // [4-byte little-endian JPG size][JPG raw data]
+        // ------------------------------------------------
 
-        header[0] = (jpgSize) & 0xFF;
-        header[1] = (jpgSize >> 8) & 0xFF;
-        header[2] = (jpgSize >> 16) & 0xFF;
-        header[3] = (jpgSize >> 24) & 0xFF;
+        const txData = new Uint8Array(4 + jpgSize);
 
-        statusText.textContent =
-            `Sending header: ${jpgSize} bytes`;
+        txData[0] = (jpgSize) & 0xFF;
+        txData[1] = (jpgSize >> 8) & 0xFF;
+        txData[2] = (jpgSize >> 16) & 0xFF;
+        txData[3] = (jpgSize >> 24) & 0xFF;
 
-        let result = await device.transferOut(
-            OUT_EP,
-            header
-        );
+        txData.set(jpgData, 4);
 
-        if (result.status !== "ok") {
-            throw new Error(
-                "Header transfer failed: " + result.status
-            );
-        }
-
+        console.log("Total TX =", txData.length);
         console.log(
-            "Header OK:",
-            result.bytesWritten,
-            "bytes"
+            "Header =",
+            txData[0],
+            txData[1],
+            txData[2],
+            txData[3]
         );
 
-        // ==========================================
-        // 2. JPG 分段傳送
-        // ==========================================
-        const CHUNK_SIZE = 4096;
-
-        let offset = 0;
+        // ------------------------------------------------
+        // Bulk OUT
+        // OUT_EP = 3  -> USB EP 0x03
+        // ------------------------------------------------
 
         const startTime = performance.now();
 
-        while (offset < jpgSize) {
+        const result = await device.transferOut(
+            OUT_EP,
+            txData
+        );
 
-            const end = Math.min(
-                offset + CHUNK_SIZE,
-                jpgSize
-            );
+        const endTime = performance.now();
 
-            const chunk = jpgData.subarray(
-                offset,
-                end
-            );
+        const elapsed = endTime - startTime;
 
-            result = await device.transferOut(
-                OUT_EP,
-                chunk
-            );
+        console.log("transferOut status =", result.status);
+        console.log("bytesWritten =", result.bytesWritten);
+        console.log("time =", elapsed, "ms");
 
-            if (result.status !== "ok") {
-                throw new Error(
-                    `Transfer failed at offset ${offset}: ` +
-                    result.status
-                );
-            }
-
-            if (result.bytesWritten !== chunk.length) {
-                throw new Error(
-                    `Short transfer at ${offset}: ` +
-                    `${result.bytesWritten}/${chunk.length}`
-                );
-            }
-
-            offset += result.bytesWritten;
-
+        if (result.status !== "ok") {
             statusText.textContent =
-                `Sending ${offset}/${jpgSize}`;
+                `Bulk OUT failed: ${result.status}`;
+            return;
         }
 
-        const elapsed =
-            performance.now() - startTime;
-
         statusText.textContent =
-            `JPG TX OK: ${jpgSize} bytes, ` +
+            `TX OK: ${result.bytesWritten} bytes, ` +
             `${elapsed.toFixed(2)} ms`;
-
-        console.log(
-            "JPG TX complete:",
-            jpgSize,
-            "bytes",
-            elapsed,
-            "ms"
-        );
 
     } catch (error) {
 
-        console.error(error);
+        console.error("JPG TX Error:", error);
 
         statusText.textContent =
-            "JPG TX ERROR: " +
+            "JPG TX Error: " +
             error.name + ": " +
             error.message;
     }
