@@ -67,13 +67,16 @@ receiveButton.addEventListener("click", async () => {
 connectButton.addEventListener("click", async () => {
 
     try {
+        //device = await navigator.usb.requestDevice({
+        //    filters: [
+        //        {
+        //            vendorId: VID,
+        //            productId: PID
+        //        }
+        //    ]
+        //});
         device = await navigator.usb.requestDevice({
-            filters: [
-                {
-                    vendorId: VID,
-                    productId: PID
-                }
-            ]
+            filters: []
         });
 
         await device.open();
