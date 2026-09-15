@@ -358,59 +358,75 @@ boundaryTestButton.addEventListener("click", async () => {
         1025
     ];
 
-    let output = "Boundary Test\n\n";
+    const REPEAT = 20;
+
+    let output = "Boundary Statistical Test\n\n";
+
+    statusText.style.whiteSpace = "pre-wrap";
 
     try {
 
         for (const size of testSizes) {
 
-            // 建立測試資料
             const data = new Uint8Array(size);
 
             for (let i = 0; i < size; i++) {
                 data[i] = i & 0xFF;
             }
 
-            // 讓畫面更新
-            statusText.textContent =
-                `Testing ${size} bytes...`;
+            let minTime = Infinity;
+            let maxTime = 0;
+            let totalTime = 0;
 
-            await new Promise(resolve =>
-                setTimeout(resolve, 100)
-            );
+            for (let n = 0; n < REPEAT; n++) {
 
-            // ------------------------------
-            // 單次 transferOut
-            // ------------------------------
+                const t0 = performance.now();
 
-            const t0 = performance.now();
+                const result =
+                    await device.transferOut(
+                        OUT_EP,
+                        data
+                    );
 
-            const result =
-                await device.transferOut(
-                    OUT_EP,
-                    data
-                );
+                const t1 = performance.now();
 
-            const t1 = performance.now();
+                if (result.status !== "ok") {
+                    throw new Error(
+                        `${size} B status=${result.status}`
+                    );
+                }
 
-            const elapsed = t1 - t0;
+                if (result.bytesWritten !== size) {
+                    throw new Error(
+                        `${size} B written=${result.bytesWritten}`
+                    );
+                }
+
+                const elapsed = t1 - t0;
+
+                minTime = Math.min(minTime, elapsed);
+                maxTime = Math.max(maxTime, elapsed);
+                totalTime += elapsed;
+            }
+
+            const avgTime =
+                totalTime / REPEAT;
 
             output +=
-                `${size} B : ` +
-                `${elapsed.toFixed(2)} ms` +
-                `, written=${result.bytesWritten}` +
-                `, ${result.status}\n`;
-        }
+                `${size} B\n` +
+                `  MIN = ${minTime.toFixed(2)} ms\n` +
+                `  AVG = ${avgTime.toFixed(2)} ms\n` +
+                `  MAX = ${maxTime.toFixed(2)} ms\n\n`;
 
-        statusText.style.whiteSpace = "pre-wrap";
+            statusText.textContent =
+                output + "Testing...";
+        }
 
         statusText.textContent =
             output +
-            "\nBoundary Test Complete";
+            "Statistical Test Complete";
 
     } catch (error) {
-
-        statusText.style.whiteSpace = "pre-wrap";
 
         statusText.textContent =
             output +
